@@ -1,5 +1,6 @@
 import express from 'express';
 import authRoutes from './authRoutes.js';
+import userRoutes from './userRoutes.js';
 
 // import accountRoutes from 'accountRoutes.js';
 // import transactionRoutes from 'transactionRoutes.js';
@@ -11,6 +12,6 @@ router.use('/auth', authRoutes);
 
 // router.use('/accounts', accountRoutes);
 // router.use('/transactions', transactionRoutes);
-// router.use('/users', userRoutes);
+router.use('/user', userRoutes);
 
 export default router;
