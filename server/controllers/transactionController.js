@@ -1,4 +1,6 @@
 import pool from "../Library/database.js";
+import express from 'express';
+import { getMonthName } from "../Library/index.js";
 
 export const getTransactions = async (req, res) => {
   try {
@@ -140,3 +142,116 @@ export const transferMoneytoAccount = async (req, res) => {
     res.status(500).json({ message: "Error transferring money" });
   }
 };
+
+export const deleteTransaction = async (req, res) => {
+  try {
+    const { userId } = req.user;
+    const { id } = req.params;
+
+    const transaction = await pool.query(
+      "SELECT * FROM tbltransaction WHERE id = $1 AND user_id = $2",
+      [id, userId]
+    );
+
+    if (transaction.rows.length === 0) {
+      return res.status(404).json({ message: "Transaction not found" });
+    }
+
+    console.log(`🗑️ Deleting transaction ${id} for user ${userId}`);
+
+    await pool.query("BEGIN");
+
+    await pool.query(
+      "DELETE FROM tbltransaction WHERE id = $1",
+      [id]
+    );
+
+    await pool.query("COMMIT");
+    console.log("✅ Transaction deleted:", transaction.rows[0]);
+
+    res.status(200).json({ message: "Transaction deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting transaction:", error);
+    res.status(500).json({ message: "Error deleting transaction" });
+  }
+};
+
+export const getDashboardInformation = async (req, res) => {
+  try {
+    const { userId } = req.user;
+    console.log(`📊 Fetching dashboard information for user ${userId}`);
+
+    let totalIncome = 0;
+    let totalExpense = 0;
+
+    const transactionResults = await pool.query(
+      "SELECT type, SUM(amount) as totalAmount FROM tbltransaction WHERE user_id = $1 GROUP BY type",
+      [userId]
+    );
+
+    const transactions = transactionResults.rows;
+
+    transactions.forEach((transaction) => {
+      if (transaction.type === 'income') {
+        totalIncome += parseFloat(transaction.totalAmount);
+      } else if (transaction.type === 'expense') {
+        totalExpense += parseFloat(transaction.totalAmount);
+      }
+    });
+
+    const availableBalance = totalIncome - totalExpense;
+    console.log(`Available balance for user ${userId}: ${availableBalance}`);
+
+    //aggregate transactions to sum by type, group, month. 
+    const year = new Date().getFullYear();
+    const startDate = new Date(year, 0, 1);
+    const endDate = new Date(year, 11, 31);
+
+    const result = await pool.query(`
+      SELECT 
+        EXTRACT(MONTH FROM createdAtDate) AS month,
+        type,
+        SUM(amount) AS totalAmount
+      FROM tbltransaction
+      WHERE user_id = $1 AND createdAtDate BETWEEN $2 AND $3
+      GROUP BY EXTRACT(MONTH FROM createdAtDate), type
+    `, [userId, startDate, endDate]);
+
+    // organize data
+
+    const data = new Array(12).fill().map((_, index) => {
+        const monthData = result.rows.filter((item) => parseInt(item.month) === index + 1);
+        const income = monthData.find((item) => item.type === 'income');
+        const expense = monthData.find((item) => item.type === 'expense');
+        return {
+          month: getMonthName(index + 1),
+          income: income ? parseFloat(income.totalAmount) : 0,
+          expense: expense ? parseFloat(expense.totalAmount) : 0,
+        };
+    });
+
+    const lastTransactionResults = await pool.query(
+      "SELECT * FROM tbltransaction WHERE user_id = $1 ORDER BY createdAtDate DESC LIMIT 5",
+      [userId]
+    );
+
+    const lastAccountsResults = await pool.query(
+      "SELECT * FROM tblaccount WHERE user_id = $1 ORDER BY createdAtDate DESC LIMIT 5",
+      [userId]
+    );
+
+    res.status(200).json({
+        status: "success",  
+      availableBalance,
+      totalExpense, 
+        totalIncome,
+      chartData: data,
+      lastTransaction: lastTransactionResults.rows,
+      lastAccounts: lastAccountsResults.rows
+    });
+
+  } catch (error) {
+    console.error("Error fetching dashboard information:", error);
+    res.status(500).json({ message: "Error fetching dashboard information" });
+  }
+}

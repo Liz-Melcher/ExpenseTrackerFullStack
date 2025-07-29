@@ -23,3 +23,11 @@ export const generateToken = (user) => {
     const token = JWT.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1d' });
     return token;
 }
+
+export function getMonthName(monthNumber) {
+    const monthNames = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    ];
+    return monthNames[monthNumber - 1] || "";
+}
