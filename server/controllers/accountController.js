@@ -1,6 +1,15 @@
 import pool from '../Library/database.js';
 
 
+/**
+ * GET /api/accounts
+ * 🔐 Requires Bearer Token
+ * 📦 No JSON body required
+ * 📌 Example Thunder Client Test:
+ *   - Method: GET
+ *   - URL: http://localhost:3000/api/accounts
+ *   - Auth: Bearer Token (from login)
+ */
 //getAccounts
 export const getAccounts = async (req, res) => {
   try {
@@ -25,6 +34,21 @@ export const getAccounts = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/accounts/create
+ * 🔐 Requires Bearer Token
+ * 📦 JSON Body Required:
+ * {
+ *   "accountName": "Bank1",
+ *   "accountNumber": "NotaRealNumber",
+ *   "initialBalance": 100
+ * }
+ * 📌 Example Thunder Client Test:
+ *   - Method: POST
+ *   - URL: http://localhost:3000/api/accounts/create
+ *   - Body: JSON (see above)
+ *   - Auth: Bearer Token
+ */
 //createAccounts
 // createAccounts
 export const createAccount = async (req, res) => {
@@ -81,6 +105,19 @@ export const createAccount = async (req, res) => {
   }
 };
 
+/**
+ * PUT /api/accounts/:id/add-money
+ * 🔐 Requires Bearer Token
+ * 📦 JSON Body Required:
+ * {
+ *   "amount": 100
+ * }
+ * 📌 Example Thunder Client Test:
+ *   - Method: PUT
+ *   - URL: http://localhost:3000/api/accounts/1/add-money
+ *   - Body: JSON (see above)
+ *   - Auth: Bearer Token
+ */
 //addMoneyToAccount
 export const addMoneyToAccount = async (req, res) => {
   try {

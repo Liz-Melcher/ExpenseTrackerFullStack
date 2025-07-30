@@ -1,6 +1,15 @@
 import pool from "../Library/database.js";
 import bcrypt from "bcrypt";
 
+/**
+ * GET /api/user
+ * 🔐 Requires Bearer Token
+ * 📦 No JSON Body Required
+ * 📌 Example Thunder Client Test:
+ *   - Method: GET
+ *   - URL: http://localhost:3000/api/user
+ *   - Auth: Bearer Token
+ */
 export const getUser = async (req, res) => {
   try {
     const { userId } = req.user;
@@ -25,6 +34,21 @@ export const getUser = async (req, res) => {
   }
 };
 
+/**
+ * PUT /api/user/change-password
+ * 🔐 Requires Bearer Token
+ * 📦 JSON Body Required:
+ * {
+ *   "oldPassword": "123456",
+ *   "newPassword": "1234567",
+ *   "confirmPassword": "1234567"
+ * }
+ * 📌 Example Thunder Client Test:
+ *   - Method: PUT
+ *   - URL: http://localhost:3000/api/user/change-password
+ *   - Body: JSON (see above)
+ *   - Auth: Bearer Token
+ */
 export const changePassword = async (req, res) => {
   try {
     const { userId } = req.user;
@@ -72,6 +96,26 @@ export const changePassword = async (req, res) => {
   }
 };
 
+/**
+ * PUT /api/user/:id
+ * 🔐 Requires Bearer Token
+ * 📦 JSON Body Required:
+ * {
+ *   "email": "user@test.com",
+ *   "password": "newpass",
+ *   "firstName": "First",
+ *   "lastName": "Last",
+ *   "contact": "123 456 7890",
+ *   "accounts": ["bank", "credit card"],
+ *   "country": "USA",
+ *   "currency": "USD"
+ * }
+ * 📌 Example Thunder Client Test:
+ *   - Method: PUT
+ *   - URL: http://localhost:3000/api/user/1
+ *   - Body: JSON (see above)
+ *   - Auth: Bearer Token
+ */
 export const updateUser = async (req, res) => {
   try {
     const { userId } = req.user;

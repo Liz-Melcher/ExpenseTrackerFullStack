@@ -2,6 +2,18 @@ import pool from "../Library/database.js";
 import express from 'express';
 import { getMonthName } from "../Library/index.js";
 
+/**
+ * GET /api/transactions
+ * 🔐 Requires Bearer Token
+ * 📦 Optional Query Parameters:
+ *   - dayFrom: ISO date string (e.g., 2025-07-01)
+ *   - dayTo: ISO date string (e.g., 2025-07-29)
+ *   - search: keyword to filter by description/source/status
+ * 📌 Example Thunder Client Test:
+ *   - Method: GET
+ *   - URL: http://localhost:3000/api/transactions?dayFrom=2025-07-01&dayTo=2025-07-29&search=coffee
+ *   - Auth: Bearer Token
+ */
 export const getTransactions = async (req, res) => {
   try {
     const today = new Date();
@@ -10,16 +22,28 @@ export const getTransactions = async (req, res) => {
     const sevenDaysAgo = _sevenDaysAgo.toISOString().split('T')[0];
 
     const { dayFrom, dayTo, search } = req.query;
+    const searchTerm = typeof search === 'string' ? search.trim() : '';
     const { userId } = req.user;
     const startDate = new Date(dayFrom || sevenDaysAgo);
-    const endDate = dayTo ? new Date(dayTo) : today;
-    console.log(`📅 Fetching transactions for user ${userId} from ${startDate.toISOString()} to ${endDate.toISOString()} with search term "${search}"`);
+    const endDate = new Date(dayTo || today);
+    endDate.setUTCHours(23, 59, 59, 999);
+    console.log(`📅 Fetching transactions for user ${userId} from ${startDate.toISOString()} to ${endDate.toISOString()} with search term "${searchTerm}"`);
 
     const transactions = await pool.query(
-      "SELECT * FROM tbltransaction WHERE user_id = $1 AND createdAtDate >= $2 AND createdAtDate <= $3 AND (description ILIKE $4 OR source ILIKE $4 OR status ILIKE $4) ORDER BY id DESC",
-      [userId, startDate, endDate, `%${search || ''}%`]
+      `SELECT * FROM tbltransaction
+       WHERE userid = $1
+         AND createdAt >= $2
+         AND createdAt <= $3
+         AND (
+           $4 = '' OR
+           description ILIKE '%' || $4 || '%' OR
+           source ILIKE '%' || $4 || '%' OR
+           status ILIKE '%' || $4 || '%'
+         )
+       ORDER BY id DESC`,
+      [userId, startDate, endDate, searchTerm]
     );
-    console.log("Fetched transactions for user:", userId, transactions)
+    console.log(`✅ Found ${transactions.rowCount} transactions for user ${userId}`);
 
     res.status(200).json({ transactions: transactions.rows });
   } catch (error) {
@@ -28,9 +52,28 @@ export const getTransactions = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/transactions/add-transaction/:accountId
+ * 🔐 Requires Bearer Token
+ * 📦 JSON Body Required:
+ * {
+ *   "description": "Coffee shop",
+ *   "status": "Completed",
+ *   "source": "Bank",
+ *   "amount": 6.75,
+ *   "type": "expense"
+ * }
+ * 📌 Example Thunder Client Test:
+ *   - Method: POST
+ *   - URL: http://localhost:3000/api/transactions/add-transaction/3
+ *   - Body: JSON (see above)
+ *   - Auth: Bearer Token
+ */
 export const addTransaction = async (req, res) => {
   try {
+    console.log("🚨 addTransaction triggered");
     const { userId } = req.user;
+    console.log("👤 req.user:", req.user);
     const { accountId } = req.params;
     console.log(`🔍 Fetching account with ID ${accountId} for user ${userId}`);
     const { description, status, source, amount, type } = req.body;
@@ -46,7 +89,7 @@ export const addTransaction = async (req, res) => {
       return res.status(400).json({ message: "Invalid transaction type" });
     }
     const account = await pool.query(
-      "SELECT * FROM tblaccount WHERE id = $1 AND user_id = $2",
+      "SELECT * FROM tblaccount WHERE id = $1 AND userid = $2",
       [accountId, userId]
     );
     if (account.rows.length === 0) {
@@ -62,7 +105,7 @@ export const addTransaction = async (req, res) => {
     );
 
     const newTransaction = await pool.query(
-      "INSERT INTO tbltransaction (user_id, description, status, source, amount, type, createdAtDate) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *",
+      "INSERT INTO tbltransaction (userid, description, status, source, amount, type, createdAt) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *",
       [userId, description, status, source, amount, type]
     );
 
@@ -76,10 +119,28 @@ export const addTransaction = async (req, res) => {
   }
 }
 
-export const transferMoneytoAccount = async (req, res) => {
+/**
+ * PUT /transactions/transfer-money
+ * 🔐 Requires Bearer Token
+ * 📦 JSON Body Required:
+ * {
+ *   "fromAccountId": 1,
+ *   "toAccountId": 2,
+ *   "amount": 50
+ * }
+ * 📌 Example Thunder Client Test:
+ *   - Method: PUT
+ *   - URL: http://localhost:3000/api/transactions/transfer-money
+ *   - Body: JSON (see above)
+ *   - Auth: Bearer Token
+ */
+export const transferMoneyToAccount = async (req, res) => {
   try {
     const { userId } = req.user;
     const { fromAccountId, toAccountId, amount } = req.body;
+
+    // Log when route is triggered
+    console.log("♻️ transferMoneytoAccount route hit with:", { fromAccountId, toAccountId, amount });
 
     if (!fromAccountId || !toAccountId || !amount) {
       return res.status(400).json({ message: "All fields are required" });
@@ -90,15 +151,19 @@ export const transferMoneytoAccount = async (req, res) => {
     }
 
     const fromAccount = await pool.query(
-      "SELECT * FROM tblaccount WHERE id = $1 AND user_id = $2",
+      "SELECT * FROM tblaccount WHERE id = $1 AND userid = $2",
       [fromAccountId, userId]
     );
     const toAccount = await pool.query(
-      "SELECT * FROM tblaccount WHERE id = $1 AND user_id = $2",
+      "SELECT * FROM tblaccount WHERE id = $1 AND userid = $2",
       [toAccountId, userId]
     );
 
     if (fromAccount.rows.length === 0 || toAccount.rows.length === 0) {
+      console.log("❌ One or both accounts not found", {
+        fromAccount: fromAccount.rows,
+        toAccount: toAccount.rows
+      });
       return res.status(404).json({ message: "One or both accounts not found" });
     }
 
@@ -121,13 +186,13 @@ export const transferMoneytoAccount = async (req, res) => {
     );
 
     const newTransactionFrom = await pool.query(
-      "INSERT INTO tbltransaction (user_id, account_id, description, status, source, amount, type, createdAtDate) VALUES ($1, $2, 'Transfer to Account', 'Completed', 'Transfer', $3, 'expense', NOW()) RETURNING *",
-      [userId, fromAccountId, amount]
+      "INSERT INTO tbltransaction (userid, description, status, source, amount, type, createdAt) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *",
+      [userId, 'Transfer to Account', 'Completed', 'Transfer', amount, 'expense']
     );
 
     const newTransactionTo = await pool.query(
-      "INSERT INTO tbltransaction (user_id, account_id, description, status, source, amount, type, createdAtDate) VALUES ($1, $2, 'Transfer from Account', 'Completed', 'Transfer', $3, 'income', NOW()) RETURNING *",
-      [userId, toAccountId, amount]
+      "INSERT INTO tbltransaction (userid, description, status, source, amount, type, createdAt) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *",
+      [userId, 'Transfer from Account', 'Completed', 'Transfer', amount, 'income']
     );
 
     await pool.query("COMMIT");
@@ -143,13 +208,22 @@ export const transferMoneytoAccount = async (req, res) => {
   }
 };
 
+/**
+ * DELETE /api/transactions/:id
+ * 🔐 Requires Bearer Token
+ * 📦 No JSON Body Required
+ * 📌 Example Thunder Client Test:
+ *   - Method: DELETE
+ *   - URL: http://localhost:3000/api/transactions/5
+ *   - Auth: Bearer Token
+ */
 export const deleteTransaction = async (req, res) => {
   try {
     const { userId } = req.user;
     const { id } = req.params;
 
     const transaction = await pool.query(
-      "SELECT * FROM tbltransaction WHERE id = $1 AND user_id = $2",
+      "SELECT * FROM tbltransaction WHERE id = $1 AND userid = $2",
       [id, userId]
     );
 
@@ -176,6 +250,15 @@ export const deleteTransaction = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/transactions/dashboard
+ * 🔐 Requires Bearer Token
+ * 📦 No JSON Body Required
+ * 📌 Example Thunder Client Test:
+ *   - Method: GET
+ *   - URL: http://localhost:3000/api/transactions/dashboard
+ *   - Auth: Bearer Token
+ */
 export const getDashboardInformation = async (req, res) => {
   try {
     const { userId } = req.user;
@@ -185,7 +268,7 @@ export const getDashboardInformation = async (req, res) => {
     let totalExpense = 0;
 
     const transactionResults = await pool.query(
-      "SELECT type, SUM(amount) as totalAmount FROM tbltransaction WHERE user_id = $1 GROUP BY type",
+      "SELECT type, SUM(amount) as totalAmount FROM tbltransaction WHERE userid = $1 GROUP BY type",
       [userId]
     );
 
@@ -209,12 +292,12 @@ export const getDashboardInformation = async (req, res) => {
 
     const result = await pool.query(`
       SELECT 
-        EXTRACT(MONTH FROM createdAtDate) AS month,
+        EXTRACT(MONTH FROM createdAt) AS month,
         type,
         SUM(amount) AS totalAmount
       FROM tbltransaction
-      WHERE user_id = $1 AND createdAtDate BETWEEN $2 AND $3
-      GROUP BY EXTRACT(MONTH FROM createdAtDate), type
+      WHERE userid = $1 AND createdAt BETWEEN $2 AND $3
+      GROUP BY EXTRACT(MONTH FROM createdAt), type
     `, [userId, startDate, endDate]);
 
     // organize data
@@ -231,12 +314,12 @@ export const getDashboardInformation = async (req, res) => {
     });
 
     const lastTransactionResults = await pool.query(
-      "SELECT * FROM tbltransaction WHERE user_id = $1 ORDER BY createdAtDate DESC LIMIT 5",
+      "SELECT * FROM tbltransaction WHERE userid = $1 ORDER BY createdAt DESC LIMIT 5",
       [userId]
     );
 
     const lastAccountsResults = await pool.query(
-      "SELECT * FROM tblaccount WHERE user_id = $1 ORDER BY createdAtDate DESC LIMIT 5",
+      "SELECT * FROM tblaccount WHERE userid = $1 ORDER BY createdAt DESC LIMIT 5",
       [userId]
     );
 
